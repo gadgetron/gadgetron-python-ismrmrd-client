@@ -3,6 +3,8 @@ import ismrmrd_serial
 
 import struct
 import socket
+import threading
+import numpy as np
 
 GADGET_MESSAGE_INT_ID_MIN                             =   0
 GADGET_MESSAGE_CONFIG_FILE                            =   1
@@ -35,6 +37,7 @@ GADGET_MESSAGE_EXT_ID_MAX                             = 4096
 MAX_BLOBS_LOG_10 = 6
 
 GadgetMessageIdentifier = struct.Struct('<H')
+SIZEOF_GADGET_MESSAGE_IDENTIFIER = len(GadgetMessageIdentifier.pack(0))
 GadgetMessageConfigurationFile = struct.Struct('<1024s')
 GadgetMessageScript = struct.Struct('<I')
 
@@ -43,9 +46,9 @@ def readsock(sock, bytecount):
     chunks = []
     curcount = 0
     while curcount < bytecount:
-        chunk = sock.recv(min(bytecount - curcount), 4096)
+        chunk = sock.recv(min(bytecount - curcount, 4096))
         if chunk == '':
-            raise RuntimeError("socket connection broken")
+            raise RuntimeError("socket connection closed")
         chunks.append(chunk)
         curcount += len(chunk)
     return ''.join(chunks)
@@ -65,6 +68,8 @@ class GadgetronClientImageMessageReader(GadgetronClientMessageReader):
         # read image header
         serialized_header = readsock(sock, ismrmrd_serial.SIZEOF_ISMRMRD_IMAGE_HEADER)
         head = ismrmrd_serial.deserialize_image_header(serialized_header)
+        #data_bytes = (head.matrix_size[0] * head.matrix_size[1] * head.matrix_size[2] *
+        #        head.channels * ismrmrd.sizeof_data_type(head.data_type))
         img = ismrmrd.Image()
         img.head = head
 
@@ -79,7 +84,7 @@ class GadgetronClientImageMessageReader(GadgetronClientMessageReader):
             # open dataset
             self.dataset = ismrmrd.Dataset(self.filename, self.groupname)
 
-        self.dataset.append_image(img)
+        self.dataset.append_image("image_%d" % img.head.image_series_index, img)
 
 class GadgetronClientAttribImageMessageReader(GadgetronClientMessageReader):
     def __init__(self, filename, groupname):
@@ -135,12 +140,33 @@ class GadgetronClientConnector(object):
             self.connect(hostname, port)
         self.readers = {}
         self.writers = {}
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.reader_thread = None
 
     def connect(self, hostname, port):
         self.hostname = hostname
         self.port = port
-        self.socket.connect((hostname, port))
+        self.sock.connect((hostname, port))
+        self.reader_thread = threading.Thread(name="GadgetronClientConnector read_task", target=self.read_task)
+        self.reader_thread.start()
+
+    def read_task(self):
+        while True:
+            msg = readsock(self.sock, SIZEOF_GADGET_MESSAGE_IDENTIFIER)
+            kind = GadgetMessageIdentifier.unpack(msg)[0]
+
+            if kind == GADGET_MESSAGE_CLOSE:
+                break
+
+            try:
+                reader = self.readers[kind]
+            except:
+                print("Invalid message ID received: %d" % kind)
+                raise
+            reader.read(self.sock)
+
+    def wait(self):
+        self.reader_thread.join()
 
     def register_reader(self, kind, reader):
         self.readers[kind] = reader
@@ -154,33 +180,34 @@ class GadgetronClientConnector(object):
     def send_gadgetron_configuration_file(self, filename):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_CONFIG_FILE)
         cfg = GadgetMessageConfigurationFile.pack(filename)
-        self.socket.send(msg)
-        self.socket.send(cfg)
+        self.sock.send(msg)
+        self.sock.send(cfg)
 
     def send_gadgetron_parameters(self, xml):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_PARAMETER_SCRIPT)
         script_len = GadgetMessageScript.pack(len(xml))
-        self.socket.send(msg)
-        self.socket.send(script_len)
-        self.socket.send(xml)
+        self.sock.send(msg)
+        self.sock.send(script_len)
+        print(xml)
+        self.sock.send(xml)
 
     def send_gadgetron_close(self):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_CLOSE)
-        self.socket.send(msg)
+        self.sock.send(msg)
 
     def send_ismrmrd_acquisition(self, acq):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_ISMRMRD_ACQUISITION)
-        self.socket.send(msg)
         buff = ismrmrd_serial.serialize_acquisition_header(acq.head)
-        self.socket.send(buff)
 
         #trajectory_elements = acq.head.trajectory_dimensions * acq.head.number_of_samples
-        #data_elements = acq.head.active_channels * acq.head.number_of_samples
+        #data_elements = 2 * acq.head.active_channels * acq.head.number_of_samples
 
-        self.socket.send(acq.traj.tobytes())
-        self.socket.send(acq.data.tobytes())
+        self.sock.send(msg)
+        self.sock.send(buff)
+        self.sock.send(acq.traj.tobytes())
+        self.sock.send(acq.data.tobytes())
 
     def __del__(self):
-        if self.socket:
-            self.socket.close()
-            self.socket = None
+        if self.sock:
+            self.sock.close()
+            self.sock = None
