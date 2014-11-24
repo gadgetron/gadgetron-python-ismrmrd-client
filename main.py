@@ -39,11 +39,30 @@ def main():
     else:
         logger.setLevel(logging.WARNING)
 
-    out_filename = args.outfile
-    hdf5_out_group = args.out_group
+    logger.debug("Instantiating Connector")
+    con = gt.Connector()
 
-    logger.debug("Instantiating GadgetronClientConnector")
-    con = gt.GadgetronClientConnector()
+    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGE_REAL_USHORT,
+            gt.ImageMessageReader(args.outfile, args.out_group))
+    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGE_REAL_FLOAT,
+            gt.ImageMessageReader(args.outfile, args.out_group))
+    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGE_CPLX_FLOAT,
+            gt.ImageMessageReader(args.outfile, args.out_group))
+
+    # Image with attributes
+    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGEWITHATTRIB_REAL_USHORT,
+            gt.ImageAttribMessageReader(args.outfile, args.out_group))
+    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGEWITHATTRIB_REAL_FLOAT,
+            gt.ImageAttribMessageReader(args.outfile, args.out_group))
+    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGEWITHATTRIB_CPLX_FLOAT,
+            gt.ImageAttribMessageReader(args.outfile, args.out_group))
+
+    # DICOM
+    con.register_reader(gt.GADGET_MESSAGE_DICOM,
+            gt.BlobMessageReader(args.out_group, 'dcm'))
+    con.register_reader(gt.GADGET_MESSAGE_DICOM_WITHNAME,
+            gt.BlobAttribMessageReader('', 'dcm'))
+
     logger.debug("Connecting to Gadgetron @ %s:%d" % (args.address, args.port))
     con.connect(args.address, args.port)
 
@@ -53,28 +72,6 @@ def main():
     else:
         logger.debug("Sending gadgetron configuration filename %s", args.config)
         con.send_gadgetron_configuration_file(args.config)
-
-
-    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGE_REAL_USHORT,
-            gt.GadgetronClientImageMessageReader(out_filename, hdf5_out_group))
-    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGE_REAL_FLOAT,
-            gt.GadgetronClientImageMessageReader(out_filename, hdf5_out_group))
-    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGE_CPLX_FLOAT,
-            gt.GadgetronClientImageMessageReader(out_filename, hdf5_out_group))
-
-    # Image with attributes
-    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGEWITHATTRIB_REAL_USHORT,
-            gt.GadgetronClientAttribImageMessageReader(out_filename, hdf5_out_group))
-    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGEWITHATTRIB_REAL_FLOAT,
-            gt.GadgetronClientAttribImageMessageReader(out_filename, hdf5_out_group))
-    con.register_reader(gt.GADGET_MESSAGE_ISMRMRD_IMAGEWITHATTRIB_CPLX_FLOAT,
-            gt.GadgetronClientAttribImageMessageReader(out_filename, hdf5_out_group))
-
-    # DICOM
-    con.register_reader(gt.GADGET_MESSAGE_DICOM,
-            gt.GadgetronClientBlobMessageReader(hdf5_out_group, 'dcm'))
-    con.register_reader(gt.GADGET_MESSAGE_DICOM_WITHNAME,
-            gt.GadgetronClientBlobAttribMessageReader('', 'dcm'))
 
     dset = ismrmrd.Dataset(args.filename, args.in_group, False)
     if not dset:
