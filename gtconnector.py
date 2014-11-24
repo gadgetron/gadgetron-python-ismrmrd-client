@@ -185,11 +185,11 @@ class GadgetronClientConnector(object):
 
     def send_gadgetron_parameters(self, xml):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_PARAMETER_SCRIPT)
-        script_len = GadgetMessageScript.pack(len(xml))
+        script_len = GadgetMessageScript.pack(len(xml) + 1)
+        xml_with_nul = '%s\0' % xml
         self.sock.send(msg)
         self.sock.send(script_len)
-        print(xml)
-        self.sock.send(xml)
+        self.sock.send(xml_with_nul)
 
     def send_gadgetron_close(self):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_CLOSE)
