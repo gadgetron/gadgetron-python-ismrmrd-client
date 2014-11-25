@@ -1,5 +1,4 @@
 import ismrmrd
-import ismrmrd_serial
 
 import struct
 import socket
@@ -73,10 +72,9 @@ class ImageMessageReader(MessageReader):
 
     def read(self, sock):
         # read image header
-        serialized_header = readsock(sock, ismrmrd_serial.SIZEOF_ISMRMRD_IMAGE_HEADER)
-        head = ismrmrd_serial.deserialize_image_header(serialized_header)
+        serialized_header = readsock(sock, ismrmrd.ImageHeader._size_in_bytes())
         img = ismrmrd.Image()
-        img.head = head
+        img.head = ismrmrd.image_header_from_bytes(serialized_header)
 
         # now the image's data should be a valid NumPy array of zeros
         dtype = img.data.dtype
@@ -93,10 +91,9 @@ class ImageMessageReader(MessageReader):
 class ImageAttribMessageReader(ImageMessageReader):
     def read(self, sock):
         # read image header
-        serialized_header = readsock(sock, ismrmrd_serial.SIZEOF_ISMRMRD_IMAGE_HEADER)
-        head = ismrmrd_serial.deserialize_image_header(serialized_header)
+        serialized_header = readsock(sock, ismrmrd.ImageHeader._size_in_bytes())
         img = ismrmrd.Image()
-        img.head = head
+        img.head = ismrmrd.image_header_from_bytes(serialized_header)
 
         # read meta attributes
         msg = readsock(self.sock, SIZEOF_GADGET_MESSAGE_ATTRIB_LENGTH)
@@ -236,7 +233,7 @@ class Connector(object):
 
     def send_ismrmrd_acquisition(self, acq):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_ISMRMRD_ACQUISITION)
-        buff = ismrmrd_serial.serialize_acquisition_header(acq.head)
+        buff = acq.head.to_bytes()
 
         self.sock.send(msg)
         self.sock.send(buff)
