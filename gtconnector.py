@@ -72,48 +72,44 @@ class ImageMessageReader(MessageReader):
 
     def read(self, sock):
         # read image header
-        serialized_header = readsock(sock, ismrmrd.ImageHeader._size_in_bytes())
-        img = ismrmrd.Image()
-        img.head = ismrmrd.image_header_from_bytes(serialized_header)
+        serialized_header = readsock(sock, ismrmrd.hdf5.image_header_dtype.itemsize)
+        img = ismrmrd.Image(serialized_header)
 
         # now the image's data should be a valid NumPy array of zeros
         dtype = img.data.dtype
         data_bytes = len(img.data.flat) * dtype.itemsize
         serialized_data = readsock(sock, data_bytes)
-        img.data = np.fromstring(serialized_data, dtype=dtype)
+        img.data.ravel()[:] = np.fromstring(serialized_data, dtype=dtype)
 
         if not self.dataset:
             # open dataset
             self.dataset = ismrmrd.Dataset(self.filename, self.groupname)
 
-        self.dataset.append_image("image_%d" % img.head.image_series_index, img)
+        self.dataset.append_image("image_%d" % img.image_series_index, img)
 
 class ImageAttribMessageReader(ImageMessageReader):
     def read(self, sock):
         # read image header
-        serialized_header = readsock(sock, ismrmrd.ImageHeader._size_in_bytes())
-        img = ismrmrd.Image()
-        img.head = ismrmrd.image_header_from_bytes(serialized_header)
-
+        serialized_header = readsock(sock, ismrmrd.hdf5.image_header_dtype.itemsize)
         # read meta attributes
         msg = readsock(self.sock, SIZEOF_GADGET_MESSAGE_ATTRIB_LENGTH)
         attrib_len = GadgetMessageAttribLength.unpack(msg)[0]
         attribs = readsock(self.sock, attrib_len)
 
-        print(attribs)
-        img.setAttributeString(attribs)
+        # make a new image        
+        img = ismrmrd.Image(serialized_header, attribs)
 
         # now the image's data should be a valid NumPy array of zeros
         dtype = img.data.dtype
         data_bytes = len(img.data.flat) * dtype.itemsize
         serialized_data = readsock(sock, data_bytes)
-        img.data = np.fromstring(serialized_data, dtype=dtype)
+        img.data.ravel()[:] = np.fromstring(serialized_data, dtype=dtype)
 
         if not self.dataset:
             # open dataset
             self.dataset = ismrmrd.Dataset(self.filename, self.groupname)
 
-        self.dataset.append_image("image_%d" % img.head.image_series_index, img)
+        self.dataset.append_image("image_%d" % img.image_series_index, img)
 
 class BlobMessageReader(MessageReader):
     def __init__(self, prefix, suffix):
@@ -233,10 +229,9 @@ class Connector(object):
 
     def send_ismrmrd_acquisition(self, acq):
         msg = GadgetMessageIdentifier.pack(GADGET_MESSAGE_ISMRMRD_ACQUISITION)
-        buff = acq.head.to_bytes()
 
         self.sock.send(msg)
-        self.sock.send(buff)
+        self.sock.send(buffer(acq.getHead()))
         self.sock.send(acq.traj.tobytes())
         self.sock.send(acq.data.tobytes())
 

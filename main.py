@@ -77,10 +77,10 @@ def main():
     if not dset:
         parser.error("Not a valid dataset: %s" % args.filename)
 
-    xml_config = dset.read_header()
+    xml_config = dset.read_xml_header()
     con.send_gadgetron_parameters(xml_config)
 
-    for idx in range(dset.number_of_acquisitions):
+    for idx in range(dset.number_of_acquisitions()):
         logger.debug("Sending acquisition %d", idx)
         acq = dset.read_acquisition(idx)
         try:
