@@ -1,3 +1,3 @@
 # Python Gadgetron ISMRMRD Client
 
-Requires Python bindings from [ISMRMRD source](https://github.com/ismrmrd/ismrmrd)
+Requires ISMRMRD Python API  [ISMRMRD Python API](https://github.com/ismrmrd/ismrmrd-python)
